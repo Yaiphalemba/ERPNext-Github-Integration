@@ -42,11 +42,6 @@ def github_webhook():
                 msg=payload,
                 digestmod=hashlib.sha256
             ).hexdigest()
-            
-            frappe.log_error(
-                f"Signature received: {signature}\nExpected: {expected_signature}\nSecret: {repr(secret)}",
-                "GitHub Webhook Signature Debug"
-            )
 
             if not hmac.compare_digest(expected_signature, signature):
                 frappe.log_error('Invalid webhook signature', 'GitHub Webhook')
