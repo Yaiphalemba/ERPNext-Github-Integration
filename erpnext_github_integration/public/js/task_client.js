@@ -17,12 +17,12 @@ frappe.ui.form.on('Task', {
                     callback: function(r) {
                         if (r.message) {
                             let issue = r.message.issue;
-                            frappe.msgprint(__('Issue Successfully Created'));
 
                             // Save both: local doc link & GitHub issue number
                             frm.set_value('github_issue_doc', r.message.local_doc);
                             frm.set_value('github_issue_number', issue.number);
                             frm.save();
+                            frappe.msgprint(__('Issue Successfully Created'));
                         }
                     }
                 });
