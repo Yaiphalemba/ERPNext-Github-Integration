@@ -1,5 +1,6 @@
 frappe.ui.form.on('Task', {
     refresh: function(frm) {
+        // --- Create GitHub Issue ---
         frm.add_custom_button(__('Create GitHub Issue'), function() {
             let repo = frm.doc.github_repo;
             if (!repo) {
@@ -17,18 +18,18 @@ frappe.ui.form.on('Task', {
                     callback: function(r) {
                         if (r.message) {
                             let issue = r.message.issue;
-                            frappe.msgprint(__('Issue Successfully Created'));
 
-                            // Save both: local doc link & GitHub issue number
                             frm.set_value('github_issue_doc', r.message.local_doc);
                             frm.set_value('github_issue_number', issue.number);
                             frm.save();
+                            frappe.msgprint(__('Issue Successfully Created'));
                         }
                     }
                 });
             }, __('Create GitHub Issue'));
-        });
+        }, __('GitHub'));
 
+        // --- Create Pull Request ---
         frm.add_custom_button(__('Create Pull Request'), function() {
             let repo = frm.doc.github_repo;
             if (!repo) {
@@ -54,8 +55,9 @@ frappe.ui.form.on('Task', {
                     }
                 });
             }, __('Create Pull Request'));
-        });
+        }, __('GitHub'));
 
+        // --- Assign Issue ---
         frm.add_custom_button(__('Assign Issue'), function() {
             let repo = frm.doc.github_repo;
             let issue_no = frm.doc.github_issue_number;
@@ -65,7 +67,6 @@ frappe.ui.form.on('Task', {
                 return;
             }
 
-            // fetch ERPNext users with github_username set
             frappe.db.get_list('User', {
                 fields: ['name', 'full_name', 'github_username'],
                 filters: { enabled: 1 },
@@ -98,8 +99,9 @@ frappe.ui.form.on('Task', {
                     });
                 }, __('Assign Issue'));
             });
-        });
+        }, __('GitHub'));
 
+        // --- Assign PR Reviewer ---
         frm.add_custom_button(__('Assign PR Reviewer'), function() {
             let repo = frm.doc.github_repo;
             let pr_number = frm.doc.github_pr_number;
@@ -109,7 +111,6 @@ frappe.ui.form.on('Task', {
                 return;
             }
 
-            // fetch ERPNext users with github_username set
             frappe.db.get_list('User', {
                 fields: ['name', 'full_name', 'github_username'],
                 filters: { enabled: 1, github_username: ['!=', ''] },
@@ -129,7 +130,6 @@ frappe.ui.form.on('Task', {
                         reqd: 1
                     }
                 ], function(values) {
-                    // values.reviewers will already be an array of github_usernames
                     let selected = values.reviewers || [];
 
                     frappe.call({
@@ -148,6 +148,6 @@ frappe.ui.form.on('Task', {
                     });
                 }, __('Assign PR Reviewer'));
             });
-        });
+        }, __('GitHub'));
     }
 });
