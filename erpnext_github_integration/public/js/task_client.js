@@ -73,7 +73,7 @@ frappe.ui.form.on('Task', {
                 limit: 100
             }).then(users => {
                 let user_options = users.map(u => ({
-                    value: u.github_username || '',
+                    value: u.name,
                     label: `${u.full_name || u.name} (${u.github_username || 'no GitHub'})`
                 }));
 
@@ -117,8 +117,8 @@ frappe.ui.form.on('Task', {
                 limit: 100
             }).then(users => {
                 let user_options = users.map(u => ({
-                    value: u.github_username,
-                    label: `${u.full_name || u.name} (${u.github_username})`
+                    value: u.name,
+                    label: `${u.full_name || u.name} (${u.github_username || 'no GitHub'})`
                 }));
 
                 frappe.prompt([
