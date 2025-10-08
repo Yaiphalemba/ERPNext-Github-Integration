@@ -302,6 +302,8 @@ def assign_issue(repo_full_name, issue_number, assignees):
         # Clear existing assignments
         clear("Repository Issue", local.name)
         if task:
+            task_doc = frappe.get_doc('Task', task.name)
+            task_doc.set('assigned_to_users', [])
             clear("Task", task.name)
 
         for user_id in assignees:
@@ -322,6 +324,10 @@ def assign_issue(repo_full_name, issue_number, assignees):
                 'issue': local.name,
                 'user': user_id
             })
+            if task:
+                task_doc.append('assigned_to_users', {
+                    'user': user_id
+                })
 
             # also create ERPNext assignments
             try:
@@ -342,6 +348,7 @@ def assign_issue(repo_full_name, issue_number, assignees):
                 frappe.log_error(frappe.get_traceback(), "Failed to create Frappe assignment")
 
         local.save(ignore_permissions=True)
+        task_doc.save(ignore_permissions=True) if task else None
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Failed to update local Repository Issue assignees")
@@ -647,7 +654,7 @@ def create_issue(repository, title, body=None, assignees=None, labels=None):
         frappe.throw(_('GitHub Personal Access Token not configured in GitHub Settings'))
     
     payload = {'title': title}
-    if body: 
+    if body:
         payload['body'] = body
     if assignees:
         if isinstance(assignees, str):
@@ -665,36 +672,38 @@ def create_issue(repository, title, body=None, assignees=None, labels=None):
         payload['labels'] = labels
     
     resp = github_request('POST', f'/repos/{repository}/issues', token, data=payload)
-    if resp:
-        try:
-            doc = frappe.get_doc({
-                'doctype': 'Repository Issue',
-                'repository': repository,
-                'issue_number': resp.get('number'),
-                'title': resp.get('title'),
-                'body': resp.get('body') or '',
-                'state': resp.get('state'),
-                'labels': ','.join([l.get('name') if isinstance(l, dict) else str(l) for l in resp.get('labels', [])]),
-                'url': resp.get('html_url'),
-                'github_id': str(resp.get('id', '')),
-                'created_at': convert_github_datetime(resp.get('created_at')),
-                'updated_at': convert_github_datetime(resp.get('updated_at'))
+    if not resp:
+        frappe.throw(_('Failed to create GitHub issue'))
+    
+    try:
+        doc = frappe.get_doc({
+            'doctype': 'Repository Issue',
+            'repository': repository,
+            'issue_number': resp.get('number'),
+            'title': resp.get('title'),
+            'body': resp.get('body') or '',
+            'state': resp.get('state'),
+            'labels': ','.join([l.get('name') if isinstance(l, dict) else str(l) for l in resp.get('labels', [])]),
+            'url': resp.get('html_url'),
+            'github_id': str(resp.get('id', '')),
+            'created_at': convert_github_datetime(resp.get('created_at')),
+            'updated_at': convert_github_datetime(resp.get('updated_at'))
+        })
+        doc.insert(ignore_permissions=True)
+        
+        for assignee in resp.get('assignees', []):
+            gh_login = assignee.get('login')
+            erp_user = frappe.db.get_value("User", {"github_username": gh_login}, "name") or gh_login
+            doc.append('assignees_table', {
+                'user': erp_user,
+                'issue': doc.name
             })
-            doc.insert(ignore_permissions=True)
-            
-            # Add assignees after insert
-            for assignee in resp.get('assignees', []):
-                gh_login = assignee.get('login')
-                erp_user = frappe.db.get_value("User", {"github_username": gh_login}, "name") or gh_login
-                doc.append('assignees_table', {
-                    'user': erp_user,
-                    'issue': doc.name
-                })
-            doc.save(ignore_permissions=True)
-            return {'issue': resp, 'local_doc': doc.name}
-        except Exception:
-            pass
-    return resp
+        doc.save(ignore_permissions=True)
+        return {'issue': resp, 'local_doc': doc.name}
+    
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "GitHub Issue Create Error")
+        frappe.throw(_('Error while creating local Repository Issue record'))
 
 @frappe.whitelist()
 def bulk_create_issues(repository, issues):
@@ -740,33 +749,37 @@ def create_pull_request(repository, title, head, base, body=None):
         frappe.throw(_('GitHub Personal Access Token not configured in GitHub Settings'))
     
     payload = {'title': title, 'head': head, 'base': base}
-    if body: 
+    if body:
         payload['body'] = body
-        
+
     resp = github_request('POST', f'/repos/{repository}/pulls', token, data=payload)
-    if resp:
-        try:
-            doc = frappe.get_doc({
-                'doctype': 'Repository Pull Request',
-                'repository': repository,
-                'pr_number': resp.get('number'),
-                'title': resp.get('title'),
-                'body': resp.get('body') or '',
-                'state': resp.get('state'),
-                'head_branch': resp.get('head', {}).get('ref'),
-                'base_branch': resp.get('base', {}).get('ref'),
-                'author': resp.get('user', {}).get('login'),
-                'mergeable_state': resp.get('mergeable_state'),
-                'github_id': str(resp.get('id', '')),
-                'url': resp.get('html_url'),
-                'created_at': convert_github_datetime(resp.get('created_at')),
-                'updated_at': convert_github_datetime(resp.get('updated_at'))
-            })
-            doc.insert(ignore_permissions=True)
-            return {'pull_request': resp, 'local_doc': doc.name}
-        except Exception:
-            pass
-    return resp
+    if not resp:
+        frappe.throw(_('Failed to create Pull Request on GitHub'))
+
+    try:
+        doc = frappe.get_doc({
+            'doctype': 'Repository Pull Request',
+            'repository': repository,
+            'pr_number': resp.get('number'),
+            'title': resp.get('title'),
+            'body': resp.get('body') or '',
+            'state': resp.get('state'),
+            'head_branch': resp.get('head', {}).get('ref'),
+            'base_branch': resp.get('base', {}).get('ref'),
+            'author': resp.get('user', {}).get('login'),
+            'mergeable_state': resp.get('mergeable_state'),
+            'github_id': str(resp.get('id', '')),
+            'url': resp.get('html_url'),
+            'created_at': convert_github_datetime(resp.get('created_at')),
+            'updated_at': convert_github_datetime(resp.get('updated_at'))
+        })
+        doc.insert(ignore_permissions=True)
+
+        return {'pull_request': resp, 'local_doc': doc.name}
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "GitHub Pull Request Create Error")
+        frappe.throw(_('Error while creating local Repository Pull Request record'))
 
 @frappe.whitelist()
 def sync_repo_members(repo_full_name):
@@ -940,102 +953,6 @@ def start_sync_all_repositories():
     """Start background sync of all repositories"""
     frappe.enqueue('erpnext_github_integration.github_api.background_sync_all_repositories')
     return {'status': 'queued'}
-
-@frappe.whitelist()
-def close_issue(repo_full_name, issue_number, close_task=True, comment=None):
-    """
-    Close a GitHub issue and optionally close the linked Task.
-    - repo_full_name: "owner/repo"
-    - issue_number: integer or string issue number
-    - close_task: boolean (defaults True) — if True, mark linked Task as Completed
-    - comment: optional comment to add to the Task after closing
-    """
-    try:
-        # Basic validation
-        if not repo_full_name or not issue_number:
-            frappe.throw(_('repository and issue_number are required'))
-
-        # Permission check: allow GitHub Admins or project managers (same logic as sync)
-        if not _can_sync_repo(repo_full_name):
-            frappe.throw(_('You do not have permission to close issues on this repository.'))
-
-        # GitHub token
-        settings = frappe.get_single('GitHub Settings')
-        token = settings.get_password('personal_access_token')
-        if not token:
-            frappe.throw(_('GitHub Personal Access Token not configured in GitHub Settings'))
-
-        # Normalize issue number
-        try:
-            issue_num = int(issue_number)
-        except Exception:
-            frappe.throw(_('issue_number must be an integer'))
-
-        # Close the issue on GitHub
-        resp = github_request('PATCH', f'/repos/{repo_full_name}/issues/{issue_num}', token, data={'state': 'closed'})
-        if not resp:
-            frappe.throw(_('Failed to close GitHub issue or empty response'))
-
-        # Update local Repository Issue (if exists)
-        try:
-            issue_filters = {'repository': repo_full_name, 'issue_number': issue_num}
-            if frappe.db.exists('Repository Issue', issue_filters):
-                ri = frappe.get_doc('Repository Issue', issue_filters)
-                ri.state = 'closed'
-                # update timestamps if GitHub returned them
-                updated_at = resp.get('updated_at') or resp.get('closed_at')
-                if updated_at:
-                    ri.updated_at = convert_github_datetime(updated_at)
-                ri.save(ignore_permissions=True)
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), f"close_issue: update Repository Issue {repo_full_name}#{issue_num}")
-
-        # Find linked Task by github_issue_number (and optionally by repo)
-        try:
-            task_name = frappe.db.get_value('Task', {'github_issue_number': issue_num}, 'name')
-            # If task_name found, verify repo match (if Task stores repo in github_repo or via Project)
-            if task_name:
-                task = frappe.get_doc('Task', task_name)
-                linked_repo = getattr(task, 'github_repo', None) or None
-                # If Task doesn't store repo, try matching via project -> Project.github_repository
-                project_repo = None
-                if getattr(task, 'project', None):
-                    project_repo = frappe.db.get_value('Project', task.project, 'github_repository') \
-                                   or frappe.db.get_value('Project', task.project, 'repository')
-
-                # If a repository filter is present and doesn't match, still proceed — it's likely the same issue
-                # Close Task if requested
-                if close_task:
-                    try:
-                        # Mark completed (use Completed to align with earlier code)
-                        task.status = 'Completed'
-                        # keep agile_status in sync if present
-                        if hasattr(task, 'agile_status'):
-                            task.agile_status = 'Completed'
-                        task.save(ignore_permissions=True)
-                        # add optional comment
-                        if comment:
-                            task.add_comment('Comment', comment)
-                    except Exception:
-                        frappe.log_error(frappe.get_traceback(), f"close_issue: closing Task {task_name}")
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), f"close_issue: find/update Task for {repo_full_name}#{issue_num}")
-
-        # Return GitHub response along with a short summary
-        return {
-            'success': True,
-            'github_response': resp,
-            'repo': repo_full_name,
-            'issue_number': issue_num
-        }
-
-    except frappe.ValidationError:
-        # let frappe throw through for expected errors
-        raise
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "close_issue_failed")
-        frappe.throw(_('Failed to close issue: {0}').format(str(e)))
-
 
 @frappe.whitelist()
 def get_repository_activity(repository, days=30):
