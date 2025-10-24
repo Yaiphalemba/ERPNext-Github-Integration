@@ -118,7 +118,7 @@
    "link_fieldname": "github_repo"
   }
  ],
- "modified": "2025-10-16 10:44:57.591231",
+ "modified": "2025-10-23 11:10:06.174293",
  "modified_by": "Administrator",
  "module": "Erpnext Github Integration",
  "name": "Repository",
@@ -141,5 +141,6 @@
  "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }
