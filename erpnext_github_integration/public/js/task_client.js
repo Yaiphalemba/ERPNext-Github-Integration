@@ -1,5 +1,13 @@
 frappe.ui.form.on('Task', {
-    refresh: function(frm) {
+    refresh: async function(frm) {
+        const response = await frappe.db.get_value('GitHub Settings', 'GitHub Settings', 'enabled');
+        const github_enabled = cint(response?.message?.enabled);
+
+        if (github_enabled !== 1) {
+            frm.toggle_display('github_integration_section', false)
+            return;
+        }
+        
         frm.add_custom_button(__('Create GitHub Issue'), function() {
             let repo = frm.doc.github_repo;
             if (!repo) {
